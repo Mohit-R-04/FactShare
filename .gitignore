@@ -1,0 +1,27 @@
+# Node.js
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Python
+*.pyc
+__pycache__/
+frontend/src/venv/
+frontend/src/uploads/
+
+# Environment files
+.env
+*.env
+
+# Logs
+*.log
+
+# Mac system files
+.DS_Store
+
+# Build output
+frontend/build/
+
+# Misc
+*.swp
+*.swo

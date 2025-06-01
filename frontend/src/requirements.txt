@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+google-generativeai
+Pillow
+Flask
+Flask-CORS
+python-dotenv
+Werkzeug
+flask_cors
+requests
