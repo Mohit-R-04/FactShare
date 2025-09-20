@@ -21,7 +21,7 @@ brew services start mongodb-community
 
 # Clone repository
 
-git clone https://github.com/your-username/factShare.git
+git clone https://github.com/Mohit-R-04/factShare.git
 cd factShare
 
 # Setup Backend
