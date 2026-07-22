@@ -1,13 +1,10 @@
 # Node.js
 node_modules/
-backend/node_modules/
 frontend/node_modules/
 
 # Python
 *.pyc
 __pycache__/
-frontend/src/venv/
-frontend/src/uploads/
 
 # Environment files
 .env
@@ -21,6 +18,10 @@ frontend/src/uploads/
 
 # Build output
 frontend/build/
+
+# Spring Boot
+backend-spring/target/
+backend-spring/.mvn/
 
 # Misc
 *.swp

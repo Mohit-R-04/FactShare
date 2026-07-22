@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: factshare-api
+    runtime: java
+    buildCommand: cd backend-spring && mvn clean package -DskipTests
+    startCommand: cd backend-spring && java -jar target/*.jar
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MIMO_API_KEY
+        sync: false
+      - key: MIMO_API_URL
+        value: https://api.xiaomimimo.com/v1
+      - key: MIMO_MODEL
+        value: mimo-v2.5-pro
+
+  - type: web
+    name: factshare-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false

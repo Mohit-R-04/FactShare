@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import SubmitArticle from "./pages/SubmitArticle";
@@ -12,35 +12,31 @@ import "./styles/global.css";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem("token"));
-  const [page, setPage] = useState("home");
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handlePageChange = (newPage) => {
-    setPage(newPage);
-    navigate(`/${newPage === "home" ? "" : newPage}`);
+  useEffect(() => {
+    setIsAuthenticated(!!localStorage.getItem("token"));
+  }, [location.pathname]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setIsAuthenticated(false);
+    navigate("/");
   };
 
   return (
     <div>
-      <Navbar setPage={handlePageChange} />
+      <Navbar isAuthenticated={isAuthenticated} onLogout={handleLogout} />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/submit" element={<SubmitArticle />} />
         <Route path="/community" element={<Community />} />
-        <Route
-          path="/login"
-          element={<Login onLogin={() => setIsAuthenticated(true)} />}
-        />
-        <Route
-          path="/register"
-          element={<Register onRegister={() => navigate("/login")} />}
-        />
-        <Route
-          path="/dashboard"
-          element={isAuthenticated ? <Dashboard /> : <Login onLogin={() => setIsAuthenticated(true)} />}
-        />
+        <Route path="/login" element={<Login onLogin={() => setIsAuthenticated(true)} />} />
+        <Route path="/register" element={<Register onRegister={() => navigate("/login")} />} />
+        <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Login onLogin={() => setIsAuthenticated(true)} />} />
       </Routes>
-      <Chatbot />
+      {isAuthenticated && <Chatbot />}
     </div>
   );
 }

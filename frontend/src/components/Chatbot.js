@@ -1,73 +1,95 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import DOMPurify from "dompurify";
 import "../styles/global.css";
+
+const API_BASE = "http://localhost:5001";
 
 function Chatbot() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
-    // Add user message (plain text, styled via CSS)
     const userMessage = { role: "user", content: input };
-    setMessages([...messages, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setIsLoading(true);
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/chat", {
-        question: input,
-      });
-
-      // Add bot message (HTML content)
-      const botMessage = { role: "assistant", content: response.data.response };
-      setMessages((prevMessages) => [...prevMessages, botMessage]);
+      const response = await axios.post(`${API_BASE}/chat`, { question: input });
+      setMessages((prev) => [...prev, { role: "assistant", content: response.data.response }]);
     } catch (error) {
-      console.error("Error:", error);
-      const errorMessage = {
-        role: "assistant",
-        content: "<p>Failed to get a response from the server. Please try again later.</p>",
-      };
-      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+      console.error("Chat error:", error);
+      setMessages((prev) => [...prev, { role: "assistant", content: "<p>Sorry, I couldn't process that. Please try again.</p>" }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
   };
 
   return (
-    <div className={`chatbot-container ${isOpen ? "open" : ""}`}>
-      <button className="chat-toggle" onClick={() => setIsOpen(!isOpen)}>
-        💬
+    <div className="chatbot-container">
+      <button className="chat-toggle" onClick={() => setIsOpen(!isOpen)} title="Open FactBot">
+        {isOpen ? "✕" : "💬"}
       </button>
 
       {isOpen && (
         <div className="chat-box">
-          <h2>📰 FactBot - Your News Assistant</h2>
-          <div className="chat-messages">
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={msg.role === "user" ? "user-msg" : "bot-msg"}
-                dangerouslySetInnerHTML={{
-                  __html:
-                    msg.role === "user"
-                      ? msg.content // User messages are plain text
-                      : DOMPurify.sanitize(msg.content, {
-                          ADD_ATTR: ["href", "target"], // Allow href and target attributes
-                        }), // Bot messages are HTML
-                }}
-              />
-            ))}
+          <div className="chat-header">
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <h2>FactBot</h2>
+              <span className="chat-subtitle">AI Assistant</span>
+            </div>
+            <button className="chat-clear" onClick={() => setMessages([])} title="Clear chat">🗑</button>
           </div>
+
+          <div className="chat-messages">
+            {messages.length === 0 && (
+              <div className="chat-welcome">
+                <p>👋 Hi! I'm FactBot.</p>
+                <p>Ask me to fact-check any claim or news article.</p>
+              </div>
+            )}
+            {messages.map((msg, index) => (
+              <div key={index} className={msg.role === "user" ? "user-msg" : "bot-msg"}>
+                {msg.role === "user" ? (
+                  <span>{msg.content}</span>
+                ) : (
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(msg.content, { ADD_ATTR: ["href", "target"] }) }} />
+                )}
+              </div>
+            ))}
+            {isLoading && <div className="bot-msg typing-indicator"><p>Analyzing...</p></div>}
+            <div ref={messagesEndRef} />
+          </div>
+
           <div className="chat-input">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Ask me anything, and I'll fact-check it for you!"
+              onKeyPress={handleKeyPress}
+              placeholder="Ask me anything..."
+              disabled={isLoading}
             />
-            <button onClick={sendMessage}>Send</button>
+            <button onClick={sendMessage} disabled={isLoading || !input.trim()}>
+              Send
+            </button>
           </div>
         </div>
       )}
