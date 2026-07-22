@@ -1,8 +1,8 @@
+import API_BASE from "../apiConfig";
 import React, { useState } from "react";
 import axios from "axios";
 import "../styles/global.css";
 
-const API_BASE = "http://localhost:5001";
 
 const SubmitArticle = () => {
   const [activeTab, setActiveTab] = useState("news");

@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
+import API_BASE from "../apiConfig";
+import React, { useState } from "react";
 import axios from "axios";
 import DOMPurify from "dompurify";
 import "../styles/global.css";
 
-const API_BASE = "http://localhost:5001";
 
 function Chatbot() {
   const [messages, setMessages] = useState([]);

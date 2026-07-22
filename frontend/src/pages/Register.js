@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import API_BASE from "../apiConfig";
 import "../styles/global.css";
 
 const Register = ({ onRegister }) => {
@@ -38,7 +39,7 @@ const Register = ({ onRegister }) => {
 
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:5001/register", {
+      const response = await fetch(`${API_BASE}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

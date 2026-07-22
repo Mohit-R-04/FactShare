@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import API_BASE from "../apiConfig";
+import React, { useState } from "react";
 import axios from "axios";
 import "../styles/global.css";
 
-const API_BASE = "http://localhost:5001";
 
 const fallbackArticles = [
   { _id: "f1", title: "The Reality of Climate Change", credibilityScore: 95, content: "Climate change is a scientifically proven phenomenon. The IPCC states that Earth's temperature has risen by 1.1°C since the late 19th century due to human activities.", votes: { upvotes: 24, downvotes: 3 } },
