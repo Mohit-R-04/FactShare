@@ -1,9 +1,9 @@
 services:
   - type: web
     name: factshare-api
-    runtime: java
-    buildCommand: cd backend-spring && mvn clean package -DskipTests
-    startCommand: cd backend-spring && java -jar target/*.jar
+    runtime: docker
+    dockerfilePath: ./backend-spring/Dockerfile
+    dockerContext: ./backend-spring
     envVars:
       - key: MONGO_URI
         sync: false
