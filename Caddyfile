@@ -1,0 +1,45 @@
+# FactShare - Caddy reverse proxy config
+# Custom domain: factshare.ssnce.dev
+
+factshare.ssnce.dev {
+    # Frontend static files
+    root * /srv/frontend/build
+    file_server
+
+    # API reverse proxy to Spring Boot backend
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:5001
+    }
+
+    # Specific backend routes (non-/api prefix matching frontend's fetch calls)
+    @backend_routes {
+        path /login
+        path /register
+        path /verify-news
+        path /verify-image
+        path /chat
+        path /submit-article
+        path /article-history
+        path /community/*
+        path /stats/*
+        path /dashboard
+    }
+    reverse_proxy @backend_routes localhost:5001
+
+    # SPA fallback - serve index.html for all non-file routes
+    try_files {path} /index.html
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # Gzip compression
+    encode gzip
+
+    # TLS - Caddy auto-provisions HTTPS via Let's Encrypt
+    tls internal
+}
