@@ -32,7 +32,7 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a -> a
                 .requestMatchers("/register", "/login").permitAll()
-                .requestMatchers("/chat", "/verify-news", "/verify-image").permitAll()
+                .requestMatchers("/chat", "/verify-news", "/verify-image", "/verify-image-upload").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/community/articles").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

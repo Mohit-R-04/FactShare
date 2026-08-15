@@ -18,6 +18,7 @@ factshare.ssnce.dev {
         path /register
         path /verify-news
         path /verify-image
+        path /verify-image-upload
         path /chat
         path /submit-article
         path /article-history

@@ -1,8 +1,8 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
-COPY backend-spring/pom.xml .
+COPY pom.xml .
 RUN mvn dependency:resolve -q
-COPY backend-spring/src ./src
+COPY src ./src
 RUN mvn clean package -DskipTests -q
 
 FROM eclipse-temurin:21-jre
