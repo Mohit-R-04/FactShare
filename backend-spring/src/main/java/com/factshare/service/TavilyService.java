@@ -43,6 +43,7 @@ public class TavilyService {
             }
         } catch (Exception e) {
             // Search evidence is optional; verification continues without it.
+            e.printStackTrace();
         }
         return Map.of("results", Map.of(), "total", 0, "error", "Search unavailable");
     }

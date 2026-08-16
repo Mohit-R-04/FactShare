@@ -26,8 +26,9 @@ public class VerifyController {
     }
 
     @PostMapping("/verify-image")
-    public ResponseEntity<Map<String, Object>> verifyContent(@RequestBody VerifyContentRequest req) {
-        return ResponseEntity.ok(contentService.verifyContent(req));
+    public ResponseEntity<Map<String, Object>> verifyContent(Authentication auth, @RequestBody VerifyContentRequest req) {
+        String userId = (auth != null && !"anonymousUser".equals(auth.getName())) ? auth.getName() : "system";
+        return ResponseEntity.ok(contentService.verifyContent(req, userId));
     }
 
     /**

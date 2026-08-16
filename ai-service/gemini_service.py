@@ -1,4 +1,6 @@
 import os
+import time
+from urllib.parse import urlparse
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
@@ -30,24 +32,33 @@ def tavily_search():
         return jsonify({"error": "Empty input: 'keyword' is required."}), 400
 
     # 3. Call Tavily with the claim as the query. topic=news prefers recent
-    #    sources (with published_date) for current events.
-    try:
-        resp = requests.post(
-            TAVILY_API_URL,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "query": query,
-                "search_depth": "advanced",
-                "topic": "news",
-                "max_results": 8,
-                "include_answer": False,
-                "include_raw_content": False,
-                "include_images": False,
-            },
-            timeout=TAVILY_SEARCH_TIMEOUT,
-        )
-    except requests.RequestException as e:
-        return jsonify({"error": f"Tavily request failed: {str(e)}"}), 502
+    #    sources (with published_date) for current events. Retry with short
+    #    backoff on transient connection errors (api.tavily.com intermittently
+    #    resets connections) so a single reset does not fail the search.
+    resp = None
+    last_error = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                TAVILY_API_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "query": query,
+                    "search_depth": "advanced",
+                    "topic": "news",
+                    "max_results": 8,
+                    "include_answer": False,
+                    "include_raw_content": False,
+                    "include_images": False,
+                },
+                timeout=TAVILY_SEARCH_TIMEOUT,
+            )
+            break
+        except requests.RequestException as e:
+            last_error = e
+            time.sleep(0.5 + attempt * 1.0)  # 0.5s, 1.5s backoff
+    if resp is None:
+        return jsonify({"error": f"Tavily request failed: {last_error}"}), 502
 
     # 4. Surface upstream errors with their message
     if resp.status_code != 200:
@@ -72,11 +83,13 @@ def tavily_search():
     for item in items or []:
         if not isinstance(item, dict):
             continue
+        url = item.get("url") or ""
+        domain = item.get("source") or (urlparse(url).netloc if url else "")
         results["organic"].append({
             "title": item.get("title") or "",
-            "url": item.get("url") or "",
+            "url": url,
             "description": item.get("content") or item.get("raw_content") or "",
-            "domain": item.get("source") or "",
+            "domain": domain,
             "published_date": item.get("published_date") or "",
         })
     return jsonify({

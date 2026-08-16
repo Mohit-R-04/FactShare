@@ -12,15 +12,17 @@ public class NewsVerificationService {
     private final GeminiService geminiService;
     private final TavilyService tavilyService;
     private final CommunityService communityService;
+    private final ArticleService articleService;
     private ObjectMapper objectMapper = new ObjectMapper();
     private static final Set<String> VERDICTS = Set.of(
         "TRUE", "FALSE", "MISLEADING", "UNVERIFIABLE", "UNVERIFIED", "SEARCH_UNAVAILABLE");
 
     public NewsVerificationService(GeminiService geminiService, TavilyService tavilyService,
-                                   CommunityService communityService) {
+                                   CommunityService communityService, ArticleService articleService) {
         this.geminiService = geminiService;
         this.tavilyService = tavilyService;
         this.communityService = communityService;
+        this.articleService = articleService;
     }
 
     public Map<String, Object> verifyNews(VerifyNewsRequest req, String userId) {
@@ -76,12 +78,24 @@ public class NewsVerificationService {
                 result.put("communityFeed", true);
                 result.put("communityArticleId", feedArticle.getId());
                 result.put("reviewStatus", "NEEDS_REVIEW");
-                return result;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } else {
+            result.put("communityFeed", false);
+        }
+
+        // 7. Record the verification in the user's article history (Dashboard).
+        if (userId != null && !"system".equals(userId)) {
+            try {
+                String claim = String.valueOf(result.getOrDefault("claim", "Untitled claim"));
+                articleService.saveVerification(userId, "news",
+                    claim.length() > 140 ? claim.substring(0, 140) : claim,
+                    String.valueOf(result.getOrDefault("explanation", "")), score);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
-        result.put("communityFeed", false);
         return result;
     }
 

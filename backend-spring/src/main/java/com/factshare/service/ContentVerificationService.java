@@ -11,14 +11,17 @@ import java.util.*;
 public class ContentVerificationService {
     private final GeminiService geminiService;
     private final NewsVerificationService newsService;
+    private final ArticleService articleService;
     private ObjectMapper objectMapper = new ObjectMapper();
     private static final Set<String> VERDICTS = Set.of("AUTHENTIC", "MANIPULATED", "MISLEADING", "UNVERIFIABLE");
-    public ContentVerificationService(GeminiService geminiService, NewsVerificationService newsService) {
+    public ContentVerificationService(GeminiService geminiService, NewsVerificationService newsService,
+                                      ArticleService articleService) {
         this.geminiService = geminiService;
         this.newsService = newsService;
+        this.articleService = articleService;
     }
 
-    public Map<String, Object> verifyContent(VerifyContentRequest req) {
+    public Map<String, Object> verifyContent(VerifyContentRequest req, String userId) {
         List<Map<String, String>> messages = List.of(
             Map.of("role", "system", "content", authenticitySystemPrompt()),
             Map.of("role", "user", "content", "Analyze for authenticity:\n\n" + req.getImageText())
@@ -33,6 +36,7 @@ public class ContentVerificationService {
                 result.putIfAbsent("confidence", 50);
                 result.putIfAbsent("explanation", "Analysis completed.");
                 result.putIfAbsent("flags", List.of());
+                recordHistory(userId, "content", req.getImageText(), result);
                 return result;
             }
         } catch (Exception e) { e.printStackTrace(); }
@@ -54,6 +58,7 @@ public class ContentVerificationService {
                 result.putIfAbsent("confidence", 50);
                 result.putIfAbsent("explanation", "Analysis completed.");
                 result.putIfAbsent("flags", List.of());
+                recordHistory(userId, "image", String.valueOf(result.get("extracted_text")), result);
                 attachNewsAnalysis(result, userId);
                 return result;
             }
@@ -61,6 +66,24 @@ public class ContentVerificationService {
         return Map.of("extracted_text", "", "verdict", "UNVERIFIABLE",
             "confidence", 50, "explanation", "Unable to analyze at this time.",
             "flags", List.of());
+    }
+
+    /**
+     * Persist an authenticity check into the user's article history (Dashboard).
+     * Score = confidence so high-confidence checks count as high credibility.
+     */
+    private void recordHistory(String userId, String type, String text, Map<String, Object> result) {
+        if (userId == null || "system".equals(userId)) return;
+        try {
+            String title = (text == null || text.isBlank()) ? "Image authenticity check" : text.trim();
+            if (title.length() > 140) title = title.substring(0, 140);
+            int confidence = result.get("confidence") instanceof Number
+                ? ((Number) result.get("confidence")).intValue() : 50;
+            articleService.saveVerification(userId, type, title,
+                String.valueOf(result.getOrDefault("explanation", "")), confidence);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     /**

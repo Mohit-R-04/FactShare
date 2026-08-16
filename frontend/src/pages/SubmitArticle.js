@@ -3,6 +3,60 @@ import React, { useState, useRef } from "react";
 import axios from "axios";
 import "../styles/global.css";
 
+const domainOf = (url) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
+const SourceList = ({ sources }) => {
+  const urls = Array.isArray(sources) ? sources.filter((s) => /^https?:\/\//i.test(s)) : [];
+  if (urls.length === 0) return null;
+  return (
+    <div style={{ marginTop: "14px" }}>
+      <div className="result-label" style={{ marginBottom: "8px" }}>
+        Sources ({urls.length})
+      </div>
+      <div
+        style={{
+          maxHeight: "200px",
+          overflowY: "auto",
+          border: "1px solid var(--border, #2a2a2a)",
+          borderRadius: "8px",
+          background: "var(--bg-elevated, #1a1a1a)",
+          padding: "4px 14px",
+        }}
+      >
+        {urls.map((src, i) => (
+          <div
+            key={i}
+            style={{
+              padding: "9px 0",
+              borderBottom: i < urls.length - 1 ? "1px solid var(--border, #2a2a2a)" : "none",
+            }}
+          >
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--primary, #3b82f6)", fontSize: "13px", fontWeight: 600, textDecoration: "none" }}
+            >
+              {domainOf(src)}
+            </a>
+            <div style={{ fontSize: "12px", color: "var(--text-secondary, #888)", wordBreak: "break-all", marginTop: "2px" }}>
+              <a href={src} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "none" }}>
+                {src}
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const SubmitArticle = () => {
   const [activeTab, setActiveTab] = useState("news");
   const [newsText, setNewsText] = useState("");
@@ -219,12 +273,7 @@ const SubmitArticle = () => {
                 <span className="result-label">Analysis</span>
                 <span className="result-value">{newsResult.explanation}</span>
               </div>
-              {newsResult.sources && newsResult.sources.length > 0 && (
-                <div className="result-row">
-                  <span className="result-label">Sources</span>
-                  <span className="result-value">{newsResult.sources.join(", ")}</span>
-                </div>
-              )}
+              <SourceList sources={newsResult.sources} />
 
               {newsResult.communityFeed && (
                 <div
@@ -530,12 +579,7 @@ const SubmitArticle = () => {
                     <span className="result-label">Analysis</span>
                     <span className="result-value">{imageResult.newsAnalysis.explanation}</span>
                   </div>
-                  {imageResult.newsAnalysis.sources && imageResult.newsAnalysis.sources.length > 0 && (
-                    <div className="result-row">
-                      <span className="result-label">Sources</span>
-                      <span className="result-value">{imageResult.newsAnalysis.sources.join(", ")}</span>
-                    </div>
-                  )}
+                  <SourceList sources={imageResult.newsAnalysis.sources} />
                   {imageResult.newsAnalysis.communityFeed && (
                     <div
                       style={{

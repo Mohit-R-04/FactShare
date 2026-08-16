@@ -44,4 +44,19 @@ public class ArticleService {
     public List<Article> getArticleHistory(String userId) {
         return articleRepository.findByUserIdOrderBySubmissionDateDesc(userId);
     }
+
+    /**
+     * Persist a verification result (news claim / content check / image) into
+     * the user's article history so the Dashboard reflects real activity.
+     */
+    public Article saveVerification(String userId, String type, String title, String content, int score) {
+        Article article = new Article();
+        article.setUserId(userId);
+        article.setType(type);
+        article.setTitle(title != null && !title.isBlank() ? title : "Untitled verification");
+        article.setContent(content);
+        article.setCredibilityScore(Math.min(100, Math.max(0, score)));
+        article.setSubmissionDate(LocalDateTime.now());
+        return articleRepository.save(article);
+    }
 }
