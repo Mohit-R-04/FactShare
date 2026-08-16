@@ -70,13 +70,6 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Tesseract OCR for image text extraction -->
-        <dependency>
-            <groupId>net.sourceforge.tess4j</groupId>
-            <artifactId>tess4j</artifactId>
-            <version>5.11.0</version>
-        </dependency>
-
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

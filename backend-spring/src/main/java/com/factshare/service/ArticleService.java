@@ -10,10 +10,10 @@ import java.util.*;
 @Service
 public class ArticleService {
     private final ArticleRepository articleRepository;
-    private final MimoAiService mimoAiService;
-    public ArticleService(ArticleRepository articleRepository, MimoAiService mimoAiService) {
+    private final GeminiService geminiService;
+    public ArticleService(ArticleRepository articleRepository, GeminiService geminiService) {
         this.articleRepository = articleRepository;
-        this.mimoAiService = mimoAiService;
+        this.geminiService = geminiService;
     }
 
     public Article submitArticle(String userId, SubmitArticleRequest req) {
@@ -23,7 +23,7 @@ public class ArticleService {
                 Map.of("role", "system", "content", "Score article credibility 0-100. Respond ONLY: {\"score\":number,\"reasoning\":\"brief\"}"),
                 Map.of("role", "user", "content", "Article:\nTitle: " + (req.getTitle() != null ? req.getTitle() : "Untitled") + "\nContent: " + req.getContent())
             );
-            String resp = mimoAiService.chat(messages, 256);
+            String resp = geminiService.chat(messages, 256);
             int start = resp.indexOf('{');
             int end = resp.lastIndexOf('}');
             if (start >= 0 && end > start) {

@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY minimax_service.py .
+
+EXPOSE 5003
+
+ENV MINIMAX_SERVICE_PORT=5003
+
+CMD ["python3", "minimax_service.py"]

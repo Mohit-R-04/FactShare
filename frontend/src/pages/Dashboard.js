@@ -1,5 +1,5 @@
 import API_BASE from "../apiConfig";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import "../styles/global.css";
 

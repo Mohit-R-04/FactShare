@@ -1,4 +1,5 @@
 services:
+  # Java Spring Boot backend API
   - type: web
     name: factshare-api
     runtime: docker
@@ -11,13 +12,40 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      - key: MIMO_API_KEY
+      - key: GEMINI_SERVICE_URL
+        # Set this to the internal URL of the factshare-ai-service on Render
+        # e.g. https://factshare-ai-service.onrender.com
         sync: false
-      - key: MIMO_API_URL
-        value: https://api.xiaomimimo.com/v1
-      - key: MIMO_MODEL
-        value: mimo-v2.5-pro
+      - key: MINIMAX_SERVICE_URL
+        # Set this to the internal URL of the factshare-minimax-service on Render
+        # e.g. https://factshare-minimax-service.onrender.com
+        sync: false
 
+  # Python AI microservice (Gemini API bridge)
+  - type: web
+    name: factshare-ai-service
+    runtime: docker
+    dockerfilePath: ./ai-service/Dockerfile
+    dockerContext: ./ai-service
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_SERVICE_PORT
+        value: 5002
+
+  # Python AI microservice (Minimax via NVIDIA NIM)
+  - type: web
+    name: factshare-minimax-service
+    runtime: docker
+    dockerfilePath: ./ai-service/Dockerfile.minimax
+    dockerContext: ./ai-service
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: MINIMAX_SERVICE_PORT
+        value: 5003
+
+  # React frontend (static site)
   - type: web
     name: factshare-frontend
     runtime: static

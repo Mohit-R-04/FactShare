@@ -3,8 +3,8 @@ package com.factshare.controller;
 import com.factshare.dto.*;
 import com.factshare.service.ContentVerificationService;
 import com.factshare.service.NewsVerificationService;
-import com.factshare.service.OcrService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -14,17 +14,15 @@ import java.util.Map;
 public class VerifyController {
     private final NewsVerificationService newsService;
     private final ContentVerificationService contentService;
-    private final OcrService ocrService;
-
-    public VerifyController(NewsVerificationService newsService, ContentVerificationService contentService, OcrService ocrService) {
+    public VerifyController(NewsVerificationService newsService, ContentVerificationService contentService) {
         this.newsService = newsService;
         this.contentService = contentService;
-        this.ocrService = ocrService;
     }
 
     @PostMapping("/verify-news")
-    public ResponseEntity<Map<String, Object>> verifyNews(@RequestBody VerifyNewsRequest req) {
-        return ResponseEntity.ok(newsService.verifyNews(req));
+    public ResponseEntity<Map<String, Object>> verifyNews(Authentication auth, @RequestBody VerifyNewsRequest req) {
+        String userId = (auth != null && !"anonymousUser".equals(auth.getName())) ? auth.getName() : "system";
+        return ResponseEntity.ok(newsService.verifyNews(req, userId));
     }
 
     @PostMapping("/verify-image")
@@ -33,33 +31,14 @@ public class VerifyController {
     }
 
     /**
-     * Accepts an image upload, extracts text via OCR, then analyzes it with Mimo AI.
+     * Accepts an image upload and analyzes it with Gemini.
      */
     @PostMapping("/verify-image-upload")
-    public ResponseEntity<Map<String, Object>> verifyImageUpload(@RequestParam("image") MultipartFile image) {
+    public ResponseEntity<Map<String, Object>> verifyImageUpload(Authentication auth, @RequestParam("image") MultipartFile image) {
         try {
-            // Step 1: Extract text from image using Tesseract OCR
-            String extractedText = ocrService.extractText(image);
-
-            if (extractedText == null || extractedText.isBlank()) {
-                return ResponseEntity.ok(Map.of(
-                    "extracted_text", "",
-                    "verdict", "UNVERIFIABLE",
-                    "confidence", 0,
-                    "explanation", "No readable text could be extracted from the image. Please ensure the image contains clear text.",
-                    "flags", java.util.List.of()
-                ));
-            }
-
-            // Step 2: Analyze extracted text with Mimo AI
-            VerifyContentRequest req = new VerifyContentRequest();
-            req.setImageText(extractedText.trim());
-            Map<String, Object> result = contentService.verifyContent(req);
-
-            // Ensure the extracted text is included in the response
-            result.put("extracted_text", extractedText.trim());
+            String userId = (auth != null && !"anonymousUser".equals(auth.getName())) ? auth.getName() : "system";
+            Map<String, Object> result = contentService.verifyImage(image, userId);
             return ResponseEntity.ok(result);
-
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of(
                 "extracted_text", "",

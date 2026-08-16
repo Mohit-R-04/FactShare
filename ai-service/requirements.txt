@@ -1,0 +1,5 @@
+google-genai
+pillow
+flask
+flask-cors
+requests

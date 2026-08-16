@@ -5,6 +5,8 @@ frontend/node_modules/
 # Python
 *.pyc
 __pycache__/
+.venv/
+ai-service/.venv/
 
 # Environment files
 .env

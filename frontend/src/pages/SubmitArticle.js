@@ -131,8 +131,15 @@ const SubmitArticle = () => {
     const v = verdict.toLowerCase();
     if (v === "true" || v === "authentic") return "var(--success)";
     if (v === "false" || v === "manipulated") return "var(--danger)";
-    if (v === "misleading") return "var(--warning)";
+    if (v === "misleading" || v === "unverified" || v === "search_unavailable") return "var(--warning)";
     return "var(--text-secondary)";
+  };
+
+  const getScoreColor = (score) => {
+    if (score == null) return "var(--text)";
+    if (score >= 80) return "var(--success)";
+    if (score >= 50) return "var(--warning)";
+    return "var(--danger)";
   };
 
   return (
@@ -199,6 +206,12 @@ const SubmitArticle = () => {
                 <span className="result-value">{newsResult.confidence}%</span>
               </div>
               <div className="result-row">
+                <span className="result-label">Credibility Score</span>
+                <span className="result-value" style={{ fontWeight: 600, color: getScoreColor(newsResult.credibilityScore) }}>
+                  {newsResult.credibilityScore}/100
+                </span>
+              </div>
+              <div className="result-row">
                 <span className="result-label">Category</span>
                 <span className="result-value">{newsResult.category}</span>
               </div>
@@ -206,10 +219,71 @@ const SubmitArticle = () => {
                 <span className="result-label">Analysis</span>
                 <span className="result-value">{newsResult.explanation}</span>
               </div>
-              {newsResult.sources && (
+              {newsResult.sources && newsResult.sources.length > 0 && (
                 <div className="result-row">
                   <span className="result-label">Sources</span>
                   <span className="result-value">{newsResult.sources.join(", ")}</span>
+                </div>
+              )}
+
+              {newsResult.communityFeed && (
+                <div
+                  style={{
+                    marginTop: "14px",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    background: "var(--warning-bg, #fff8e1)",
+                    border: "1px solid var(--warning-border, #f0d98c)",
+                    color: "var(--warning-text, #7a5c00)",
+                  }}
+                >
+                  Credibility score ≤ 60 — this claim was marked <b>Untrusted / Needs Community Review</b> and automatically
+                  published to the Community Feed for journalist &amp; reviewer voting.
+                </div>
+              )}
+
+              {newsResult.searchEvidence?.total > 0 && (
+                <div style={{ marginTop: "14px" }}>
+                  <div className="result-label" style={{ marginBottom: "8px" }}>
+                    Search Evidence ({newsResult.searchEvidence.total} results)
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: "260px",
+                      overflow: "auto",
+                      border: "1px solid var(--border, #e5e5e5)",
+                      borderRadius: "8px",
+                      padding: "10px 12px",
+                      background: "var(--bg-secondary, #fafafa)",
+                    }}
+                  >
+                    {Object.entries(newsResult.searchEvidence.results || {}).map(([bucket, items]) =>
+                      items.length > 0 ? (
+                        <div key={bucket} style={{ marginBottom: "12px" }}>
+                          <div style={{ fontSize: "12px", fontWeight: 600, textTransform: "capitalize", color: "var(--text-secondary, #888)" }}>
+                            {bucket.replace(/_/g, " ")}
+                          </div>
+                          {items.slice(0, 5).map((item, i) => (
+                            <div key={i} style={{ margin: "6px 0" }}>
+                              {item.url ? (
+                                <a href={item.url} target="_blank" rel="noreferrer" style={{ color: "var(--primary, #6366f1)", fontSize: "13px" }}>
+                                  {item.title || item.url}
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: "13px" }}>{item.title}</span>
+                              )}
+                              {item.description && (
+                                <div style={{ fontSize: "12px", color: "var(--text-secondary, #888)" }}>
+                                  {item.description.length > 160 ? item.description.slice(0, 160) + "…" : item.description}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -275,7 +349,8 @@ const SubmitArticle = () => {
         <div>
           <div className="info-message" style={{ marginBottom: "16px" }}>
             Upload an image containing text (screenshot, forwarded message, social media post, article screenshot).
-            The system will extract the text using OCR and analyze it for authenticity.
+            The system reads the text from the image, checks whether the image itself is authentic or manipulated,
+            and then fact-checks the news content inside it.
           </div>
 
           {/* Drag & Drop Area */}
@@ -390,9 +465,10 @@ const SubmitArticle = () => {
                       whiteSpace: "pre-wrap",
                       fontFamily: "monospace",
                       fontSize: "13px",
-                      background: "var(--bg-secondary, #f5f5f5)",
+                      background: "var(--bg-input, #1e1e1e)",
                       padding: "8px 12px",
                       borderRadius: "6px",
+                      color: "var(--text, #f5f5f5)",
                     }}
                   >
                     {imageResult.extracted_text}
@@ -418,6 +494,63 @@ const SubmitArticle = () => {
                 <div className="result-row">
                   <span className="result-label">Flags</span>
                   <span className="result-value">{imageResult.flags.join(", ")}</span>
+                </div>
+              )}
+
+              {imageResult.newsAnalysis && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "14px 16px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border, #2a2a2a)",
+                    background: "var(--bg-elevated, #1a1a1a)",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 10px", fontSize: "0.85rem", fontWeight: 600, color: "var(--text, #f5f5f5)" }}>
+                    News Verification of Extracted Content
+                  </h4>
+                  <div className="result-row">
+                    <span className="result-label">Verdict</span>
+                    <span className="result-value" style={{ color: getVerdictColor(imageResult.newsAnalysis.verdict), fontWeight: 600 }}>
+                      {imageResult.newsAnalysis.verdict}
+                    </span>
+                  </div>
+                  <div className="result-row">
+                    <span className="result-label">Credibility Score</span>
+                    <span className="result-value" style={{ fontWeight: 600, color: getScoreColor(imageResult.newsAnalysis.credibilityScore) }}>
+                      {imageResult.newsAnalysis.credibilityScore}/100
+                    </span>
+                  </div>
+                  <div className="result-row">
+                    <span className="result-label">Category</span>
+                    <span className="result-value">{imageResult.newsAnalysis.category}</span>
+                  </div>
+                  <div className="result-row">
+                    <span className="result-label">Analysis</span>
+                    <span className="result-value">{imageResult.newsAnalysis.explanation}</span>
+                  </div>
+                  {imageResult.newsAnalysis.sources && imageResult.newsAnalysis.sources.length > 0 && (
+                    <div className="result-row">
+                      <span className="result-label">Sources</span>
+                      <span className="result-value">{imageResult.newsAnalysis.sources.join(", ")}</span>
+                    </div>
+                  )}
+                  {imageResult.newsAnalysis.communityFeed && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                        background: "var(--warning-bg, rgba(234,179,8,0.12))",
+                        border: "1px solid var(--warning-border, rgba(234,179,8,0.35))",
+                        color: "var(--warning-text, #facc15)",
+                      }}
+                    >
+                      Credibility score ≤ 60 — published to the Community Feed for review.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

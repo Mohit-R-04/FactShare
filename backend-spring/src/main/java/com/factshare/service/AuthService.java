@@ -35,6 +35,7 @@ public class AuthService {
         user.setPhoneNumber(req.getPhoneNumber());
         user.setGender(req.getGender());
         user.setTermsAccepted(req.isTermsAccepted());
+        user.setRole("USER");
         user.setCreatedAt(LocalDateTime.now());
         userRepository.save(user);
         return AuthResponse.builder().status("success").message("User registered successfully").build();

@@ -15,8 +15,16 @@ public class CommunityController {
     private final CommunityService communityService;
     public CommunityController(CommunityService communityService) { this.communityService = communityService; }
     @GetMapping("/community/articles")
-    public ResponseEntity<List<CommunityArticle>> getAll() {
-        return ResponseEntity.ok(communityService.getAllArticles());
+    public ResponseEntity<List<CommunityArticle>> getAll(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer minScore,
+            @RequestParam(required = false) Integer maxScore,
+            @RequestParam(required = false) String sort) {
+        if (category == null && status == null && minScore == null && maxScore == null && sort == null) {
+            return ResponseEntity.ok(communityService.getAllArticles());
+        }
+        return ResponseEntity.ok(communityService.getArticles(category, status, minScore, maxScore, sort));
     }
     @PostMapping("/community/articles")
     public ResponseEntity<CommunityArticle> publish(Authentication auth, @RequestBody Map<String, Object> body) {

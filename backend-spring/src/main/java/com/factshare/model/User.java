@@ -14,6 +14,7 @@ public class User {
     private String phoneNumber;
     private String gender;
     private boolean termsAccepted;
+    private String role = "USER";
     private LocalDateTime createdAt;
 
     public User() {}
@@ -35,6 +36,8 @@ public class User {
     public void setGender(String v) { this.gender = v; }
     public boolean isTermsAccepted() { return termsAccepted; }
     public void setTermsAccepted(boolean v) { this.termsAccepted = v; }
+    public String getRole() { return role; }
+    public void setRole(String v) { this.role = v; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime v) { this.createdAt = v; }
 }
