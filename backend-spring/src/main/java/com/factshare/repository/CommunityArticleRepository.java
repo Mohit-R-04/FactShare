@@ -1,8 +1,8 @@
 package com.factshare.repository;
 import com.factshare.model.CommunityArticle;
-import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
-public interface CommunityArticleRepository extends MongoRepository<CommunityArticle, String> {
+public interface CommunityArticleRepository extends JpaRepository<CommunityArticle, String> {
     List<CommunityArticle> findAllByOrderBySubmissionDateDesc();
 }

@@ -6,7 +6,14 @@ services:
     dockerfilePath: ./backend-spring/Dockerfile
     dockerContext: ./backend-spring
     envVars:
-      - key: MONGO_URI
+      - key: JDBC_DATABASE_URL
+        # PostgreSQL JDBC URL, e.g. jdbc:postgresql://<host>:<port>/<dbname>.
+        # Render's managed Postgres exposes DATABASE_URL (postgres://...) -
+        # convert it to the jdbc:postgresql:// form here.
+        sync: false
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
         sync: false
       - key: JWT_SECRET
         generateValue: true

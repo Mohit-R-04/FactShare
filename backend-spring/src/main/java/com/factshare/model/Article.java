@@ -1,16 +1,21 @@
 package com.factshare.model;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Document(collection = "articles")
+@Entity
+@Table(name = "articles")
 public class Article {
-    @Id private String id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private String id;
     private String userId;
     private String type;
+    @Column(length = 500)
     private String title;
+    @Column(length = 10000)
     private String content;
     private int credibilityScore = 50;
+    @Column(nullable = false)
     private LocalDateTime submissionDate = LocalDateTime.now();
 
     public Article() {}

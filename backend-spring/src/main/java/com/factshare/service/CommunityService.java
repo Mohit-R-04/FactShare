@@ -2,9 +2,13 @@ package com.factshare.service;
 import com.factshare.dto.VoteRequest;
 import com.factshare.model.CommunityArticle;
 import com.factshare.model.CommunityArticle.ReviewVotes;
+import com.factshare.model.CommunityArticle.Vote;
 import com.factshare.model.CommunityArticle.Voter;
+import com.factshare.model.CommunityVote;
 import com.factshare.repository.CommunityArticleRepository;
+import com.factshare.repository.CommunityVoteRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -12,7 +16,12 @@ import java.util.stream.Collectors;
 @Service
 public class CommunityService {
     private final CommunityArticleRepository repository;
-    public CommunityService(CommunityArticleRepository repository) { this.repository = repository; }
+    private final CommunityVoteRepository voteRepository;
+
+    public CommunityService(CommunityArticleRepository repository, CommunityVoteRepository voteRepository) {
+        this.repository = repository;
+        this.voteRepository = voteRepository;
+    }
 
     /** Feed with filters: category, review status, credibility range, sort recent|disputed. */
     public List<CommunityArticle> getArticles(String category, String status, Integer minScore, Integer maxScore, String sort) {
@@ -26,11 +35,14 @@ public class CommunityService {
             articles.sort(Comparator.comparingInt(CommunityArticle::getDisputeCount).reversed()
                 .thenComparing(CommunityArticle::getSubmissionDate, Comparator.reverseOrder()));
         }
+        attachVoters(articles);
         return articles;
     }
 
     public List<CommunityArticle> getAllArticles() {
-        return repository.findAllByOrderBySubmissionDateDesc();
+        List<CommunityArticle> articles = repository.findAllByOrderBySubmissionDateDesc();
+        attachVoters(articles);
+        return articles;
     }
 
     public CommunityArticle publishArticle(String userId, Map<String, Object> body) {
@@ -44,7 +56,6 @@ public class CommunityService {
         article.setAiScore(article.getCredibilityScore());
         article.setSubmissionDate(LocalDateTime.now());
         article.setVotes(new CommunityArticle.Vote(0, 0));
-        article.setVoters(new ArrayList<>());
         article.setCommunityVotes(new ReviewVotes(0, 0, 0));
         article.setReviewStatus("OPEN");
         return repository.save(article);
@@ -71,47 +82,48 @@ public class CommunityService {
         article.setCommunityConfidence(article.getCredibilityScore());
         article.setSubmissionDate(LocalDateTime.now());
         article.setVotes(new CommunityArticle.Vote(0, 0));
-        article.setVoters(new ArrayList<>());
         article.setCommunityVotes(new ReviewVotes(0, 0, 0));
         article.setReviewStatus("NEEDS_REVIEW");
         article.setDisputeCount(0);
         return repository.save(article);
     }
 
+    @Transactional
     public CommunityArticle vote(String userId, String articleId, VoteRequest req) {
         CommunityArticle article = repository.findById(articleId)
             .orElseThrow(() -> new RuntimeException("Article not found"));
-        if (article.getVoters() == null) article.setVoters(new ArrayList<>());
         if (article.getVotes() == null) article.setVotes(new CommunityArticle.Vote(0, 0));
+        if (article.getCommunityVotes() == null) article.setCommunityVotes(new ReviewVotes(0, 0, 0));
         String voteType = req.getVoteType() == null ? "" : req.getVoteType().toLowerCase();
         switch (voteType) {
             case "true", "false", "uncertain" -> reviewVote(article, userId, voteType);
             case "upvote", "downvote" -> legacyVote(article, userId, voteType);
             default -> throw new RuntimeException("Invalid vote type: " + req.getVoteType());
         }
-        return repository.save(article);
+        CommunityArticle saved = repository.save(article);
+        attachVoters(saved);
+        return saved;
     }
 
     /** Community review vote: one vote per reviewer, changing a vote is allowed. */
     private void reviewVote(CommunityArticle article, String userId, String voteType) {
-        if (article.getCommunityVotes() == null) article.setCommunityVotes(new ReviewVotes(0, 0, 0));
         ReviewVotes rv = article.getCommunityVotes();
 
-        Optional<Voter> existing = article.getVoters().stream()
-            .filter(v -> v.getUserId().equals(userId)).findFirst();
+        Optional<CommunityVote> existing = voteRepository.findByArticleIdAndUserId(article.getId(), userId);
         if (existing.isPresent()) {
-            Voter voter = existing.get();
-            if (voter.getVoteType().equals(voteType)) {
+            CommunityVote vote = existing.get();
+            if (vote.getVoteType().equals(voteType)) {
                 // Un-vote
                 decrement(rv, voteType);
-                article.getVoters().remove(voter);
+                voteRepository.delete(vote);
             } else {
-                decrement(rv, voter.getVoteType());
+                decrement(rv, vote.getVoteType());
                 increment(rv, voteType);
-                voter.setVoteType(voteType);
+                vote.setVoteType(voteType);
+                voteRepository.save(vote);
             }
         } else {
-            article.getVoters().add(new Voter(userId, voteType));
+            voteRepository.save(new CommunityVote(article.getId(), userId, voteType));
             increment(rv, voteType);
         }
 
@@ -163,28 +175,46 @@ public class CommunityService {
 
     /** Legacy upvote/downvote path (kept for manually published articles). */
     private void legacyVote(CommunityArticle article, String userId, String voteType) {
-        Optional<Voter> existing = article.getVoters().stream()
-            .filter(v -> v.getUserId().equals(userId)).findFirst();
+        Vote v = article.getVotes();
+        Optional<CommunityVote> existing = voteRepository.findByArticleIdAndUserId(article.getId(), userId);
         if (existing.isPresent()) {
-            Voter v = existing.get();
-            if (v.getVoteType().equals(voteType)) {
-                if ("upvote".equals(voteType)) article.getVotes().setUpvotes(article.getVotes().getUpvotes() - 1);
-                else article.getVotes().setDownvotes(article.getVotes().getDownvotes() - 1);
-                article.getVoters().remove(v);
+            CommunityVote row = existing.get();
+            if (row.getVoteType().equals(voteType)) {
+                if ("upvote".equals(voteType)) v.setUpvotes(v.getUpvotes() - 1);
+                else v.setDownvotes(v.getDownvotes() - 1);
+                voteRepository.delete(row);
             } else {
                 if ("upvote".equals(voteType)) {
-                    article.getVotes().setUpvotes(article.getVotes().getUpvotes() + 1);
-                    article.getVotes().setDownvotes(article.getVotes().getDownvotes() - 1);
+                    v.setUpvotes(v.getUpvotes() + 1);
+                    v.setDownvotes(v.getDownvotes() - 1);
                 } else {
-                    article.getVotes().setDownvotes(article.getVotes().getDownvotes() + 1);
-                    article.getVotes().setUpvotes(article.getVotes().getUpvotes() - 1);
+                    v.setDownvotes(v.getDownvotes() + 1);
+                    v.setUpvotes(v.getUpvotes() - 1);
                 }
-                v.setVoteType(voteType);
+                row.setVoteType(voteType);
+                voteRepository.save(row);
             }
         } else {
-            article.getVoters().add(new Voter(userId, voteType));
-            if ("upvote".equals(voteType)) article.getVotes().setUpvotes(article.getVotes().getUpvotes() + 1);
-            else article.getVotes().setDownvotes(article.getVotes().getDownvotes() + 1);
+            voteRepository.save(new CommunityVote(article.getId(), userId, voteType));
+            if ("upvote".equals(voteType)) v.setUpvotes(v.getUpvotes() + 1);
+            else v.setDownvotes(v.getDownvotes() + 1);
         }
+    }
+
+    /** Rebuild the transient voters array from community_votes rows (single article). */
+    private void attachVoters(CommunityArticle article) {
+        article.setVoters(voteRepository.findByArticleIdOrderByCreatedAtAsc(article.getId()).stream()
+            .map(v -> new Voter(v.getUserId(), v.getVoteType()))
+            .collect(Collectors.toList()));
+    }
+
+    /** Rebuild the transient voters array from community_votes rows (feed batch). */
+    private void attachVoters(List<CommunityArticle> articles) {
+        if (articles.isEmpty()) return;
+        List<String> ids = articles.stream().map(CommunityArticle::getId).collect(Collectors.toList());
+        Map<String, List<Voter>> byArticle = voteRepository.findByArticleIdInOrderByCreatedAtAsc(ids).stream()
+            .collect(Collectors.groupingBy(CommunityVote::getArticleId,
+                Collectors.mapping(v -> new Voter(v.getUserId(), v.getVoteType()), Collectors.toList())));
+        articles.forEach(a -> a.setVoters(byArticle.getOrDefault(a.getId(), new ArrayList<>())));
     }
 }

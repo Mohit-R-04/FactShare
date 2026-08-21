@@ -1,30 +1,56 @@
 package com.factshare.model;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
-@Document(collection = "communityArticles")
+@Entity
+@Table(name = "community_articles")
 public class CommunityArticle {
-    @Id private String id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private String id;
     private String userId;
     private String type;
+    @Column(length = 500)
     private String title;
+    @Column(length = 10000)
     private String content;
     private int credibilityScore;
+    @Column(nullable = false)
     private LocalDateTime submissionDate;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "upvotes", column = @Column(name = "upvotes")),
+        @AttributeOverride(name = "downvotes", column = @Column(name = "downvotes"))
+    })
     private Vote votes;
-    private List<Voter> voters;
 
     // Review-feed fields (auto-published verification results)
     private String category = "Other";
     private String reviewStatus = "OPEN"; // OPEN | NEEDS_REVIEW | REVIEWED
     private String verdict;
+    @Column(length = 2000)
     private String claim;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "trueVotes", column = @Column(name = "true_votes")),
+        @AttributeOverride(name = "falseVotes", column = @Column(name = "false_votes")),
+        @AttributeOverride(name = "uncertainVotes", column = @Column(name = "uncertain_votes"))
+    })
     private ReviewVotes communityVotes;
     private double communityConfidence;
     private int aiScore;
     private int disputeCount;
+
+    /**
+     * Not persisted; assembled by CommunityService from the community_votes
+     * table so the API keeps returning the historical embedded shape.
+     */
+    @Transient
+    private List<Voter> voters = new ArrayList<>();
 
     public CommunityArticle() {}
     public String getId() { return id; }
@@ -63,6 +89,7 @@ public class CommunityArticle {
     public int getDisputeCount() { return disputeCount; }
     public void setDisputeCount(int v) { this.disputeCount = v; }
 
+    @Embeddable
     public static class Vote {
         private int upvotes;
         private int downvotes;
@@ -75,6 +102,7 @@ public class CommunityArticle {
     }
 
     /** Community review votes: True / False / Uncertain. */
+    @Embeddable
     public static class ReviewVotes {
         private int trueVotes;
         private int falseVotes;

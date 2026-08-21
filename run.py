@@ -4,7 +4,7 @@ FactShare - one-command local launcher.
 
 Starts the full app stack and manages its lifecycle:
 
-    MongoDB          managed local mongod (or reuse a running one)  port 27017
+    database         embedded H2 (dev) or PostgreSQL (JDBC_DATABASE_URL)
     ai-service       Flask + Google Gemini (Python)                 port 5002
     minimax-service  Flask + NVIDIA NIM chat (optional)             port 5003
     backend-spring   Spring Boot (Java 21, Maven)                   port 5001
@@ -13,10 +13,13 @@ Starts the full app stack and manages its lifecycle:
 Usage:
     python3 run.py                  # start everything
     python3 run.py --open           # also open http://localhost:3000 in a browser
-    python3 run.py --no-mongo       # assume MongoDB is already running
     python3 run.py --no-minimax     # skip the optional NVIDIA chat service
     python3 run.py --skip-setup     # do not create venv / install dependencies
     python3 run.py --watch          # tail all service logs to the console
+
+The backend uses an embedded H2 database by default (no DB process to run).
+Set JDBC_DATABASE_URL / DATABASE_USER / DATABASE_PASSWORD in .env to use
+PostgreSQL instead.
 
 All environment variables are read from the root .env file. Logs go to .run-logs/.
 Press Ctrl+C to stop every service cleanly.
@@ -36,7 +39,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / ".run-logs"
 ENV_FILE = ROOT / ".env"
-MONGO_DBPATH = ROOT / ".data" / "mongodb"
 
 AI_DIR = ROOT / "ai-service"
 BACKEND_DIR = ROOT / "backend-spring"
@@ -46,7 +48,6 @@ GEMINI_PORT = 5002
 MINIMAX_PORT = 5003
 BACKEND_PORT = 5001
 FRONTEND_PORT = 3000
-MONGO_PORT = 27017
 
 
 # ---------------------------------------------------------------------------
@@ -202,10 +203,9 @@ class LogWatcher:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Start the full FactShare stack (MongoDB + backend + AI services + frontend)."
+        description="Start the full FactShare stack (backend + AI services + frontend)."
     )
     parser.add_argument("--open", action="store_true", help="open http://localhost:3000 when ready")
-    parser.add_argument("--no-mongo", action="store_true", help="assume MongoDB is already running")
     parser.add_argument("--no-minimax", action="store_true", help="skip the optional NVIDIA chat service")
     parser.add_argument("--skip-setup", action="store_true", help="do not create venv / install dependencies")
     parser.add_argument("--watch", action="store_true", help="tail all service logs to the console")
@@ -258,28 +258,7 @@ def main():
                             [cmd_for("mvn"), "-q", "-DskipTests", "package"], BACKEND_DIR, env):
                 sys.exit(1)
 
-    # 4. MongoDB
-    mongo_proc = None
-    if not args.no_mongo:
-        if port_open(MONGO_PORT):
-            log(f"MongoDB already running on port {MONGO_PORT} - reusing it")
-        elif shutil.which("mongod"):
-            MONGO_DBPATH.mkdir(parents=True, exist_ok=True)
-            log(f"starting managed mongod (dbpath: {MONGO_DBPATH})")
-            mongo_proc = spawn(
-                [shutil.which("mongod"), "--dbpath", str(MONGO_DBPATH),
-                 "--bind_ip", "127.0.0.1", "--port", str(MONGO_PORT)],
-                ROOT, env, LOGS_DIR / "mongodb.log",
-            )
-            if not wait_ready(MONGO_PORT, 60, "MongoDB"):
-                tail(LOGS_DIR / "mongodb.log")
-                warn("MongoDB failed to start")
-                stop(mongo_proc)
-                sys.exit(1)
-        else:
-            warn("mongod not found in PATH - the backend will fail without MongoDB")
-
-    # 5. service definitions
+    # 4. service definitions
     services = []
 
     if port_open(GEMINI_PORT):
@@ -364,7 +343,6 @@ def main():
         warn(f"{failed['name']} did not become ready within {failed['timeout']}s - see {failed['log']}")
         for s in services:
             stop(s["proc"])
-        stop(mongo_proc)
         sys.exit(1)
 
     # 7. summary
@@ -378,7 +356,7 @@ def main():
     rows.append(("ai-service (Gemini)", f"http://localhost:{GEMINI_PORT}"))
     if not args.no_minimax and env.get("NVIDIA_API_KEY"):
         rows.append(("minimax-service (NVIDIA)", f"http://localhost:{MINIMAX_PORT}"))
-    rows.append(("MongoDB", f"mongodb://localhost:{MONGO_PORT}/factshare"))
+    rows.append(("database", "H2 (embedded) / PostgreSQL via JDBC_DATABASE_URL"))
     width = max(len(r[0]) for r in rows) + 2
     for label, value in rows:
         print(f"  {label:<{width}}{value}")
@@ -396,7 +374,7 @@ def main():
 
     signal.signal(signal.SIGTERM, _term_handler)
 
-    watcher = LogWatcher([s["log"] for s in services] + [LOGS_DIR / "mongodb.log"]) if args.watch else None
+    watcher = LogWatcher([s["log"] for s in services]) if args.watch else None
 
     try:
         while True:
@@ -416,7 +394,6 @@ def main():
     finally:
         for s in services:
             stop(s["proc"])
-        stop(mongo_proc)
         log("done")
 
 

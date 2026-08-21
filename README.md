@@ -4,7 +4,7 @@ FactShare is a full-stack news and media verification platform that combines liv
 
 The system does not rely only on an AI model's pretrained knowledge for news verification. Every news claim is searched through Tavily first. The retrieved evidence is then passed to Gemini for an evidence-based verdict. Low-confidence or search-unavailable claims are automatically routed to the Community Review Feed.
 
-> Placement focus: this repository demonstrates microservice integration, REST API design, JWT security, multimodal AI, retrieval-augmented verification, MongoDB persistence, failure handling, community consensus, and dashboard analytics.
+> Placement focus: this repository demonstrates microservice integration, REST API design, JWT security, multimodal AI, retrieval-augmented verification, relational persistence (PostgreSQL/JPA), failure handling, community consensus, and dashboard analytics.
 
 ## Table of contents
 
@@ -107,11 +107,11 @@ It answers these questions using three verification modes:
 | Layer | Technologies |
 |---|---|
 | Frontend | React 19, React Router, Axios, Recharts, DOMPurify, CSS |
-| Backend | Java 21, Spring Boot 3.3.5, Spring Web, Spring Security, Spring Data MongoDB |
+| Backend | Java 21, Spring Boot 3.3.5, Spring Web, Spring Security, Spring Data JPA (Hibernate) |
 | AI service | Python, Flask, Google GenAI SDK, Pillow, Requests |
 | Search | Tavily Search API |
 | Optional chatbot service | Python, Flask, NVIDIA NIM / Minimax |
-| Database | MongoDB |
+| Database | PostgreSQL (H2 embedded for local dev) |
 | Authentication | JWT, BCrypt |
 | Deployment | Docker, Render blueprint, Caddy reverse proxy |
 
@@ -123,7 +123,7 @@ It answers these questions using three verification modes:
 | Spring Boot API | `5001` | Business logic, authentication, persistence |
 | Gemini/Tavily AI service | `5002` | Multimodal model calls and web search |
 | Optional Minimax service | `5003` | Primary chatbot provider |
-| MongoDB | `27017` | Persistent application data |
+| Database | embedded / external | H2 in dev, PostgreSQL in production |
 
 ---
 
@@ -133,7 +133,7 @@ It answers these questions using three verification modes:
 flowchart LR
     U[User / Browser] --> F[React frontend\nPort 3000]
     F -->|REST + JWT| B[Spring Boot API\nPort 5001]
-    B -->|Mongo repositories| M[(MongoDB\nfactshare)]
+    B -->|JPA repositories| P[(PostgreSQL\nfactshare)]
     B -->|/generate and /tavily/search| A[Python AI service\nPort 5002]
     A -->|Search query| T[Tavily Search API]
     A -->|Prompt + evidence + image| G[Gemini multimodal model]
@@ -172,11 +172,14 @@ flowchart LR
 - forwards text/image prompts to Gemini;
 - validates uploaded images using Pillow.
 
-#### MongoDB
+#### PostgreSQL (JPA/Hibernate)
 
-- stores user accounts;
+- stores user accounts with unique email/username constraints;
 - stores verification history used by the Dashboard;
-- stores community claims, vote counts, voters, status, and confidence.
+- stores community claims, vote counts, status, and confidence;
+- stores one vote per reviewer as a `community_votes` row with a database-enforced
+  `(article_id, user_id)` unique constraint, so changing a vote is an atomic UPDATE
+  and un-voting is a DELETE instead of a whole-document read-modify-write.
 
 ---
 
@@ -192,7 +195,7 @@ sequenceDiagram
     participant A as AI service
     participant T as Tavily
     participant G as Gemini
-    participant D as MongoDB
+    participant D as PostgreSQL
 
     U->>F: Submit claim
     F->>B: POST /verify-news
@@ -223,7 +226,7 @@ The AI service sends the claim as the Tavily query with these settings:
 
 ```json
 {
-  "query": "the submitted news claim",
+  "query": "NASA confirms water was discovered on Mars",
   "topic": "news",
   "search_depth": "advanced",
   "max_results": 8,
@@ -233,7 +236,37 @@ The AI service sends the claim as the Tavily query with these settings:
 }
 ```
 
-Normalized evidence returned to the backend:
+Tavily returns a JSON object containing metadata about the search and an array of web search results:
+
+```json
+{
+  "query": "NASA confirms water was discovered on Mars",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "title": "Article title",
+      "url": "https://example.com/article",
+      "content": "Relevant passage or snippet from the webpage...",
+      "score": 0.92,
+      "raw_content": null,
+      "published_date": "2026-08-20"
+    },
+    {
+      "title": "Another article",
+      "url": "https://another-example.com/news",
+      "content": "Relevant passage from another source...",
+      "score": 0.87,
+      "raw_content": null,
+      "published_date": "2026-08-19"
+    }
+  ],
+  "response_time": 1.42
+}
+```
+
+The AI service normalizes each result before passing it to the backend (`content` is kept as `description`, `domain` is derived from the URL, and `score`/`raw_content` are dropped):
 
 ```json
 {
@@ -275,7 +308,7 @@ flowchart TD
     I[Uploaded image] --> V[Gemini vision analysis]
     V --> E[Extracted text]
     V --> A[Image authenticity verdict]
-    E --> T[Tavily search - always]
+    E --> T[Tavily search - if text extracted]
     T --> G[Gemini evidence analysis]
     G --> N[News verdict + credibility + category + sources]
     A --> R[Combined image result]
@@ -353,6 +386,21 @@ blendedScore = aiScore * (1 - communityWeight)
              + truePercentage * communityWeight
 ```
 
+Worked example — 10 true votes and 3 false votes (0 uncertain):
+
+```text
+totalVotes       = 10 + 3 + 0 = 13
+communityWeight  = min(0.35, 13 × 0.05) = min(0.35, 0.65) = 0.35   <- capped
+truePercentage   = (10 / 13) × 100 = 76.9%
+blendedScore     = aiScore × (1 - 0.35) + 76.9 × 0.35
+                 = aiScore × 0.65 + 26.9
+```
+
+So with `aiScore = 40` (a typical Community Feed item) the blended score is
+`40 × 0.65 + 26.9 = 52.9`, rounded to `53`. Because `totalVotes >= 3`, the
+verdict flips to the community majority `TRUE` and the claim is marked
+`REVIEWED`; `disputeCount = falseVotes + uncertainVotes = 3`.
+
 Rules:
 
 - community influence increases by 5% per vote;
@@ -380,90 +428,95 @@ Community Feed filters support:
 
 ## Database design
 
-Database: `factshare`
+Database: `factshare` (PostgreSQL in production; embedded H2 for local dev).
+Schema is created automatically by Hibernate (`ddl-auto=update`).
 
 ```mermaid
 erDiagram
-    USER ||--o{ ARTICLE : creates
-    USER ||--o{ COMMUNITY_ARTICLE : publishes
-    USER ||--o{ VOTER : votes
-    COMMUNITY_ARTICLE ||--o{ VOTER : contains
-    COMMUNITY_ARTICLE ||--|| REVIEW_VOTES : aggregates
+    USERS ||--o{ ARTICLES : creates
+    USERS ||--o{ COMMUNITY_ARTICLES : publishes
+    USERS ||--o{ COMMUNITY_VOTES : votes
+    COMMUNITY_ARTICLES ||--o{ COMMUNITY_VOTES : contains
 
-    USER {
-        string id PK
-        string firstName
-        string lastName
-        string username
-        string email UK
-        string password
-        string phoneNumber
-        string gender
+    USERS {
+        varchar id PK
+        varchar firstName
+        varchar lastName
+        varchar username UK
+        varchar email UK
+        varchar password
+        varchar phoneNumber
+        varchar gender
         boolean termsAccepted
-        string role
-        datetime createdAt
+        varchar role
+        timestamp createdAt
     }
 
-    ARTICLE {
-        string id PK
-        string userId FK
-        string type
-        string title
-        string content
+    ARTICLES {
+        varchar id PK
+        varchar userId
+        varchar type
+        varchar title
+        varchar content
         int credibilityScore
-        datetime submissionDate
+        timestamp submissionDate
     }
 
-    COMMUNITY_ARTICLE {
-        string id PK
-        string userId FK
-        string type
-        string title
-        string content
+    COMMUNITY_ARTICLES {
+        varchar id PK
+        varchar userId
+        varchar type
+        varchar title
+        varchar content
         int credibilityScore
-        datetime submissionDate
-        string category
-        string reviewStatus
-        string verdict
-        string claim
+        timestamp submissionDate
+        varchar category
+        varchar reviewStatus
+        varchar verdict
+        varchar claim
         double communityConfidence
         int aiScore
         int disputeCount
-    }
-
-    VOTER {
-        string userId FK
-        string voteType
-    }
-
-    REVIEW_VOTES {
+        int upvotes
+        int downvotes
         int trueVotes
         int falseVotes
         int uncertainVotes
     }
+
+    COMMUNITY_VOTES {
+        varchar id PK
+        varchar articleId FK
+        varchar userId FK
+        varchar voteType
+        timestamp createdAt
+    }
 ```
 
-### `users` collection
+The `community_votes` table also enforces a composite unique key on
+`(articleId, userId)` — the database-level "one vote per reviewer" rule.
 
-| Field | Type | Notes |
+### `users` table
+
+| Column | Type | Notes |
 |---|---|---|
-| `_id` | String | Mongo document ID |
+| `id` | String (UUID) | Primary key |
 | `firstName`, `lastName` | String | User name |
-| `username` | String | Unique username |
-| `email` | String | Unique login email |
+| `username` | String | Unique username (`uk_users_username`) |
+| `email` | String | Unique login email (`uk_users_email`) |
 | `password` | String | BCrypt hash, never plaintext |
 | `phoneNumber`, `gender` | String | Profile fields |
 | `termsAccepted` | Boolean | Registration consent |
 | `role` | String | Defaults to `USER` |
 | `createdAt` | DateTime | Registration time |
 
-### `articles` collection
+### `articles` table
 
 Stores both manually submitted articles and authenticated verification history.
 
-| Field | Type | Notes |
+| Column | Type | Notes |
 |---|---|---|
-| `_id` | String | Mongo document ID |
+| `id` | String (UUID) | Primary key |
 | `userId` | String | Owning user |
 | `type` | String | `news`, `content`, `image`, or submission type |
 | `title` | String | Claim or content summary |
@@ -471,11 +524,11 @@ Stores both manually submitted articles and authenticated verification history.
 | `credibilityScore` | Integer | 0–100 |
 | `submissionDate` | DateTime | Used by history and Dashboard |
 
-### `communityArticles` collection
+### `community_articles` table
 
-| Field | Type | Notes |
+| Column | Type | Notes |
 |---|---|---|
-| `_id`, `userId` | String | Claim ID and submitter |
+| `id`, `userId` | String | Claim ID and submitter |
 | `type`, `title`, `content`, `claim` | String | Claim data |
 | `credibilityScore`, `aiScore` | Integer | Current blended score and original AI score |
 | `communityConfidence` | Double | Unrounded blended confidence |
@@ -484,11 +537,24 @@ Stores both manually submitted articles and authenticated verification history.
 | `verdict` | String | AI/community verdict |
 | `submissionDate` | DateTime | Feed order |
 | `disputeCount` | Integer | False + Uncertain votes |
-| `communityVotes` | Object | `trueVotes`, `falseVotes`, `uncertainVotes` |
-| `voters` | Array | `{userId, voteType}` per reviewer |
-| `votes` | Object | Legacy `upvotes`/`downvotes` compatibility |
+| `upvotes`, `downvotes` | Integer | Legacy vote counters |
+| `trueVotes`, `falseVotes`, `uncertainVotes` | Integer | Community review counters |
 
-Mongo relationships are stored as IDs rather than database-enforced joins. Spring services coordinate consistency.
+### `community_votes` table
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | String (UUID) | Primary key |
+| `articleId` | String | Owning community article |
+| `userId` | String | Reviewer |
+| `voteType` | String | `true`, `false`, `uncertain`, or legacy `upvote`/`downvote` |
+| `createdAt` | DateTime | Vote time (voters array order) |
+| `uk(article_id, user_id)` | Unique | Database-enforced "one vote per reviewer" |
+
+`community_votes` replaces the old embedded `voters` array. Voters are joined
+back onto the API response by `CommunityService` so the JSON shape is unchanged.
+Vote changes are atomic UPDATE/DELETE operations inside a transaction, eliminating
+the previous whole-document read-modify-write race.
 
 ---
 
@@ -746,7 +812,7 @@ FactShare/
 │       ├── java/com/factshare/
 │       │   ├── controller/        # REST controllers
 │       │   ├── service/           # Verification/business logic
-│       │   ├── model/             # Mongo documents
+│       │   ├── model/             # JPA entities
 │       │   ├── repository/        # Spring Data repositories
 │       │   ├── dto/               # Request/response DTOs
 │       │   ├── security/          # JWT filter/configuration
@@ -773,14 +839,17 @@ FactShare/
 | Node.js | 18+ |
 | npm | Bundled with Node.js |
 | Python | 3.10+ |
-| MongoDB | 4.4+ |
+| PostgreSQL | 14+ (optional — the backend falls back to embedded H2 locally) |
 
 ### Environment configuration
 
 Create a root `.env` file:
 
 ```env
-MONGO_URI=mongodb://localhost:27017/factshare
+# Optional - unset to use the embedded H2 database locally
+# JDBC_DATABASE_URL=jdbc:postgresql://localhost:5432/factshare
+# DATABASE_USER=postgres
+# DATABASE_PASSWORD=your_password
 JWT_SECRET=replace_with_a_strong_secret_at_least_32_characters
 PORT=5001
 
@@ -835,7 +904,6 @@ Useful launcher flags:
 
 ```bash
 python3 run.py --open          # Open browser after startup
-python3 run.py --no-mongo      # Use an already-running MongoDB
 python3 run.py --no-minimax    # Skip optional Minimax service
 python3 run.py --skip-setup    # Skip dependency/build setup
 python3 run.py --watch         # Run backend in watch/development mode
@@ -846,22 +914,20 @@ Logs are written to `.run-logs/`.
 ### Manual start
 
 ```bash
-# Terminal 1: MongoDB
-mongod --dbpath ./data/db
-
-# Terminal 2: Gemini/Tavily service
+# Terminal 1: Gemini/Tavily service
 cd ai-service
 .venv/bin/python gemini_service.py
 
-# Terminal 3: optional Minimax service
+# Terminal 2: optional Minimax service
 cd ai-service
 .venv/bin/python minimax_service.py
 
-# Terminal 4: Spring Boot
+# Terminal 3: Spring Boot (uses embedded H2 by default; set
+# JDBC_DATABASE_URL in .env to use PostgreSQL instead)
 cd backend-spring
 mvn spring-boot:run
 
-# Terminal 5: React
+# Terminal 4: React
 cd frontend
 npm start
 ```
@@ -870,7 +936,7 @@ npm start
 
 When running the launcher in the foreground, press `Ctrl+C`; it manages child-process shutdown.
 
-For separately launched local processes, terminate the relevant Java, Flask, React, and MongoDB processes gracefully.
+For separately launched local processes, terminate the relevant Java, Flask, and React processes gracefully.
 
 ---
 
@@ -952,7 +1018,7 @@ The included `Caddyfile` supports TLS, SPA fallback, security headers, and rever
 | Missing Gemini key | AI service returns 401 |
 | Gemini rate limit | AI service returns 429 |
 | Invalid image | AI service returns 400; controller returns an unverifiable response |
-| MongoDB unavailable | Persistence/auth endpoints fail; launcher reports startup failure |
+| Database unavailable (PostgreSQL/H2) | Persistence/auth endpoints fail; launcher reports startup failure |
 | Minimax unavailable | FactBot falls back to Gemini |
 | Unknown AI verdict label | Backend normalizes to `UNVERIFIABLE` |
 
@@ -966,7 +1032,7 @@ Unverified/search-unavailable results receive score 40 and are sent to Community
 - Tavily evidence is normalized into one `organic` result bucket.
 - Search query construction currently uses the entire claim without separate keyword/entity extraction.
 - There is no pagination for community feed or article history.
-- Community vote updates are not implemented with MongoDB atomic update operators; high-concurrency deployments should add optimistic locking or transactions.
+- Vote counters on `community_articles` are updated in a transaction together with the `community_votes` row; very high concurrency could still benefit from optimistic locking on the counters.
 - Dashboard trend groups by month abbreviation without year.
 - Multimodal authenticity analysis is model-based, not dedicated pixel-forensics.
 - Image text extraction uses Gemini vision rather than a separate OCR engine.
@@ -980,8 +1046,8 @@ Unverified/search-unavailable results receive score 40 and are sent to Community
 
 - Enforce `REVIEWER`/`JOURNALIST` roles for community voting.
 - Add reviewer verification and reputation scoring.
-- Add pagination, full-text search, and MongoDB indexes.
-- Add atomic vote updates and optimistic locking.
+- Add pagination, full-text search, and SQL indexes.
+- Add optimistic locking for vote counters.
 - Add source-quality scoring and domain reputation.
 - Preserve Tavily relevance scores in normalized evidence and expose them to Gemini/UI.
 - Add dynamic Tavily date filters for current vs historical claims.
@@ -997,7 +1063,7 @@ Unverified/search-unavailable results receive score 40 and are sent to Community
 
 ### 30-second project explanation
 
-> FactShare is a retrieval-augmented news verification platform. A React client sends claims to a Spring Boot API. The API always retrieves live news evidence through a Python Tavily service and passes that evidence to Gemini for a verdict, credibility score, category, and source URLs. Low-scoring or search-unavailable claims are automatically published to a MongoDB-backed community review feed, where authenticated users vote True, False, or Uncertain. JWT authentication, multimodal image analysis, failure-safe verification, and dashboard analytics complete the system.
+> FactShare is a retrieval-augmented news verification platform. A React client sends claims to a Spring Boot API. The API always retrieves live news evidence through a Python Tavily service and passes that evidence to Gemini for a verdict, credibility score, category, and source URLs. Low-scoring or search-unavailable claims are automatically published to a PostgreSQL-backed community review feed, where authenticated users vote True, False, or Uncertain. JWT authentication, multimodal image analysis, failure-safe verification, and dashboard analytics complete the system.
 
 ### Important design decisions to explain
 
@@ -1024,7 +1090,7 @@ Unverified/search-unavailable results receive score 40 and are sent to Community
 
 ### Resume-ready description
 
-> Built a full-stack misinformation verification platform using React, Spring Boot, Flask, MongoDB, Tavily Search, and Gemini multimodal AI. Implemented mandatory retrieval-augmented verification, JWT/BCrypt security, credibility scoring, image/content analysis, evidence source rendering, community consensus with bounded vote influence, and dashboard analytics.
+> Built a full-stack misinformation verification platform using React, Spring Boot, Flask, PostgreSQL (JPA/Hibernate), Tavily Search, and Gemini multimodal AI. Implemented mandatory retrieval-augmented verification, JWT/BCrypt security, credibility scoring, image/content analysis, evidence source rendering, community consensus with bounded vote influence, and dashboard analytics.
 
 ### Concepts demonstrated
 
@@ -1033,7 +1099,7 @@ Unverified/search-unavailable results receive score 40 and are sent to Community
 - retrieval-augmented generation (RAG);
 - multimodal AI integration;
 - JWT authentication and password security;
-- MongoDB document modeling;
+- relational data modeling with JPA/Hibernate and database-enforced constraints;
 - resilience and graceful degradation;
 - explainable evidence and source attribution;
 - human-in-the-loop verification;

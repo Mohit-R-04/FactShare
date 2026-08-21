@@ -1,20 +1,31 @@
 package com.factshare.model;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Document(collection = "users")
+@Entity
+@Table(name = "users", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_users_email", columnNames = "email"),
+    @UniqueConstraint(name = "uk_users_username", columnNames = "username")
+})
 public class User {
-    @Id private String id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private String id;
+    @Column(nullable = false)
     private String firstName;
+    @Column(nullable = false)
     private String lastName;
+    @Column(nullable = false, unique = true)
     private String username;
+    @Column(nullable = false, unique = true)
     private String email;
+    @Column(nullable = false)
     private String password;
     private String phoneNumber;
     private String gender;
     private boolean termsAccepted;
     private String role = "USER";
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     public User() {}
