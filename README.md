@@ -204,9 +204,14 @@ sequenceDiagram
     T-->>A: Structured web results
     A-->>B: title, URL, snippet, domain, date
     alt useful search evidence exists
-        B->>G: Initial analysis
-        B->>G: Final analysis with search evidence
-        G-->>B: Verdict, score, category, sources
+        B->>A: POST /generate (initial analysis)
+        A->>G: Text prompt
+        G-->>A: Analysis
+        A-->>B: Initial analysis
+        B->>A: POST /generate (final analysis with evidence)
+        A->>G: Prompt + search evidence
+        G-->>A: Final analysis
+        A-->>B: Verdict, score, category, sources
     else search fails or no results
         B->>B: SEARCH_UNAVAILABLE / UNVERIFIED
     end
